@@ -2,3 +2,5 @@
 .idea/
 godns.iml
 godns
+monitor monitor.go
+monitor*
