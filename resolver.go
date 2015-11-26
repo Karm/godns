@@ -75,7 +75,8 @@ var transport = http.Transport{
 var coreDisabled uint32 = 1
 var disabledSecondsTimestamp int64 = 0
 
-func dryAPICall(query string, clientAddress string) {
+func dryAPICall(query string, clientAddress string, qname string) {
+	var trimmedQname = strings.TrimSuffix(qname, ".")
 	if (atomic.LoadInt64(&disabledSecondsTimestamp) == 0) {
 		Debug("disabledSecondsTimestamp was 0, setting it to the current time")
 		atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
@@ -84,7 +85,8 @@ func dryAPICall(query string, clientAddress string) {
 	if (int64(time.Now().Unix()) - atomic.LoadInt64(&disabledSecondsTimestamp) > settings.Backend.SleepWhenDisabled) {
 		Debug("Doing dry API call...")
 		start := time.Now()
-		_, err := doAPICall(query, clientAddress)
+		//Doesn't hurt IP
+		_, err := doAPICall(trimmedQname, clientAddress, trimmedQname)
 		elapsed := time.Since(start)
 		if (err != nil) {
 			Debug("Core remains DISABLED. Gonna wait. Error: %s", err)
@@ -104,13 +106,15 @@ func dryAPICall(query string, clientAddress string) {
 	return
 }
 
-func doAPICall(query string, clientAddress string) (value bool, err error) {
+func doAPICall(query string, clientAddress string, trimmedQname string) (value bool, err error) {
 	var bufferQuery bytes.Buffer
 	bufferQuery.WriteString(coreApiServer)
 	bufferQuery.WriteString("/")
 	bufferQuery.WriteString(clientAddress)
 	bufferQuery.WriteString("/")
 	bufferQuery.WriteString(query)
+	bufferQuery.WriteString("/")
+	bufferQuery.WriteString(trimmedQname)
 	url := bufferQuery.String()
 	Debug("URL:>", url)
 
@@ -154,7 +158,7 @@ func doAPICall(query string, clientAddress string) (value bool, err error) {
 	return true, nil
 }
 
-func sinkitBackendCall(query string, clientAddress string) (bool) {
+func sinkitBackendCall(query string, clientAddress string, trimmedQname string) (bool) {
 	//TODO This is just a provisional check. We need to think it over...
 	if (len(query) > 250) {
 		fmt.Printf("Query is too long: %d\n", len(query))
@@ -162,7 +166,7 @@ func sinkitBackendCall(query string, clientAddress string) (bool) {
 	}
 
 	start := time.Now()
-	goToSinkhole, err := doAPICall(query, clientAddress)
+	goToSinkhole, err := doAPICall(query, clientAddress, trimmedQname)
 	elapsed := time.Since(start)
 	if (err != nil) {
 		atomic.StoreUint32(&coreDisabled, 1)
@@ -182,24 +186,33 @@ func sinkitBackendCall(query string, clientAddress string) (bool) {
 
 // Dummy playground
 func sinkByHostname(qname string, clientAddress string) (bool) {
-	return sinkitBackendCall(strings.TrimSuffix(qname, "."), clientAddress)
+	var trimmedQname = strings.TrimSuffix(qname, ".")
+	// Yes, twice trimmedQname
+	return sinkitBackendCall(trimmedQname, clientAddress, trimmedQname)
 }
 
 // Dummy playground
-func sinkByIPAddress(msg *dns.Msg, clientAddress string) (bool) {
+func sinkByIPAddress(msg *dns.Msg, clientAddress string, qname string) (bool) {
 	/*if !aRecord.Equal(ip) {
 			t.Fatalf("IP %q does not match registered IP %q", aRecord, ip)
 		}*/
 	//dummyTestIPAddresses := []string{"81.19.0.120"}
 	//sort.Strings(dummyTestIPAddresses)
+	var trimmedQname = strings.TrimSuffix(qname, ".")
 	for _, element := range msg.Answer {
 		Debug("\nKARMTAG: RR Element: %s\n", element)
 		//if (sort.SearchStrings(dummyTestIPAddresses, element.String()) !=  len(dummyTestIPAddresses)) {
 		//		return true
 		//	}
 		var respElemSegments = strings.Split(element.String(), "	")
-		if (sinkitBackendCall((respElemSegments[len(respElemSegments)-1:])[0], clientAddress)) {
-			return true
+		var respElement = (respElemSegments[len(respElemSegments)-1:])[0]
+		// Length in bytes, not runes. Shorter doesn't make sense.
+		if (len(respElement) < 3) {
+			continue
+		} else {
+			if (sinkitBackendCall(respElement, clientAddress, trimmedQname)) {
+				return true
+			}
 		}
 	}
 	return false
@@ -219,10 +232,12 @@ func processCoreCom(msg *dns.Msg, qname string, clientAddress string) {
 	if (atomic.LoadUint32(&coreDisabled) == 1) {
 		Debug("Core is DISABLED. Gonna call dryAPICall.")
 		//TODO qname or r for the dry run???
-		go dryAPICall(qname, clientAddress)
+		go dryAPICall(qname, clientAddress, qname)
 		Debug("...returning.")
 	} else {
-		if (sinkByHostname(qname, clientAddress) || sinkByIPAddress(msg, clientAddress)) {
+		go sinkByIPAddress(msg, clientAddress, qname)
+		// We do not sinkhole based on IP address.
+		if (sinkByHostname(qname, clientAddress)) {
 			Debug("\n KARMTAG: %s GOES TO SINKHOLE!\n", msg.Answer)
 			sendToSinkhole(msg, qname)
 		}
