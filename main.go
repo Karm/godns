@@ -51,7 +51,6 @@ func Debug(format string, v ...interface{}) {
 	}
 }
 
-// TODO: Does it make any sense?
 func Info(format string, v ...interface{}) {
 	logger.Printf(format, v...)
 }

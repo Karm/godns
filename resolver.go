@@ -19,24 +19,6 @@ import (
 	"sync/atomic"
 )
 
-/*
-type Listed struct {
-	Year uint16 `json:"year"`
-	Month uint8 `json:"month"`
-	DayOfMonth uint8 `json:"dayOfMonth"`
-	HourOfDay  uint8 `json:"hourOfDay"`
-	Minute uint8 `json:"minute"`
-	Second  uint8 `json:"second"`
-}
-*/
-/*
-type BlackListedRecord struct {
-	BlackListedDomainOrIP string `json:"blackListedDomainOrIP"`
-	Listed Listed `json:"listed"`
-	Sources map[string]string `json:"sources"`
-}
-*/
-
 type Sinkhole struct {
 	Sinkhole string `json:"sinkhole"`
 }
@@ -65,7 +47,7 @@ func (e CoreError) Error() string {
 }
 
 func dialTimeout(network, addr string) (net.Conn, error) {
-	return net.DialTimeout(network, addr, time.Duration(settings.Backend.HardRequestTimeout) * time.Second)
+	return net.DialTimeout(network, addr, time.Duration(settings.Backend.HardRequestTimeout) * time.Millisecond)
 }
 
 var coreApiServer = "http://"+os.Getenv("SINKIT_CORE_SERVER")+":"+os.Getenv("SINKIT_CORE_SERVER_PORT")+"/sinkit/rest/blacklist/dns"
@@ -82,19 +64,19 @@ func dryAPICall(query string, clientAddress string, qname string) {
 		atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
 		return
 	}
-	if (int64(time.Now().Unix()) - atomic.LoadInt64(&disabledSecondsTimestamp) > settings.Backend.SleepWhenDisabled) {
+	if ((int64(time.Now().Unix()) - atomic.LoadInt64(&disabledSecondsTimestamp))*1000 > settings.Backend.SleepWhenDisabled) {
 		Debug("Doing dry API call...")
 		start := time.Now()
 		//Doesn't hurt IP
 		_, err := doAPICall(trimmedQname, clientAddress, trimmedQname)
 		elapsed := time.Since(start)
 		if (err != nil) {
-			Debug("Core remains DISABLED. Gonna wait. Error: %s", err)
+			Info("Core remains DISABLED. Gonna wait. Error: %s", err)
 			atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
 			return
 		}
 		if (elapsed > time.Duration(settings.Backend.FitResponseTime)*time.Millisecond) {
-			Debug("Core remains DISABLED. Gonna wait. Elapsed time: %s, FitResponseTime: %s", elapsed, time.Duration(settings.Backend.FitResponseTime)*time.Millisecond)
+			Info("Core remains DISABLED. Gonna wait. Elapsed time: %s, FitResponseTime: %s", elapsed, time.Duration(settings.Backend.FitResponseTime)*time.Millisecond)
 			atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
 			return
 		}
@@ -171,13 +153,13 @@ func sinkitBackendCall(query string, clientAddress string, trimmedQname string) 
 	if (err != nil) {
 		atomic.StoreUint32(&coreDisabled, 1)
 		atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
-		Debug("Core was DISABLED. Error: %s", err)
+		Info("Core was DISABLED. Error: %s", err)
 		return false
 	}
 	if (elapsed > time.Duration(settings.Backend.FitResponseTime)*time.Millisecond) {
 		atomic.StoreUint32(&coreDisabled, 1)
 		atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
-		Debug("Core was DISABLED. Elapsed time: %s, FitResponseTime: %s", elapsed, time.Duration(settings.Backend.FitResponseTime)*time.Millisecond)
+		Info("Core was DISABLED. Elapsed time: %s, FitResponseTime: %s", elapsed, time.Duration(settings.Backend.FitResponseTime)*time.Millisecond)
 		return false
 	}
 
@@ -288,7 +270,7 @@ func (r *Resolver) Lookup(net string, req *dns.Msg, remoteAddress net.Addr) (mes
 		}
 		// If SERVFAIL happen, should return immediately and try another upstream resolver.
 		// However, other Error code like NXDOMAIN is an clear response stating
-		// that it has been verified no such domain existas and ask other resolvers
+		// that it has been verified no such domain exists and ask other resolvers
 		// would make no sense. See more about #20
 		if r != nil && r.Rcode != dns.RcodeSuccess {
 			Debug("%s failed to get an valid answer on %s", qname, nameserver)
@@ -297,7 +279,7 @@ func (r *Resolver) Lookup(net string, req *dns.Msg, remoteAddress net.Addr) (mes
 			}
 		} else {
 			Debug("\n KARMTAG: %s resolv on %s (%s) ttl: %d", UnFqdn(qname), nameserver, net, rtt)
- 		}
+		}
 		select {
 		case res <- r:
 		default:
