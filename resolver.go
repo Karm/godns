@@ -148,6 +148,14 @@ func sinkitBackendCall(query string, clientAddress string, trimmedQname string) 
 		fmt.Printf("Query is too long: %d\n", len(query))
 		return false
 	}
+	if (len(clientAddress) < 3) {
+		fmt.Printf("Client address is too short: %s\n", clientAddress)
+		return false
+	}
+	if (len(trimmedQname) < 3 || len(trimmedQname) > 250) {
+		fmt.Printf("Query FQDN is likely invalid: %s\n", trimmedQname)
+		return false
+	}
 
 	start := time.Now()
 	goToSinkhole, err := doAPICall(query, clientAddress, trimmedQname)
@@ -175,38 +183,34 @@ func sinkByHostname(qname string, clientAddress string) (bool) {
 	return sinkitBackendCall(trimmedQname, clientAddress, trimmedQname)
 }
 
-// Dummy playground
-func sinkByIPAddress(msg *dns.Msg, clientAddress string, qname string) (bool) {
-	/*if !aRecord.Equal(ip) {
-			t.Fatalf("IP %q does not match registered IP %q", aRecord, ip)
-		}*/
-	//dummyTestIPAddresses := []string{"81.19.0.120"}
-	//sort.Strings(dummyTestIPAddresses)
+// We do not sinkhole here, the side effect is that CNAMEs slip through.
+func sinkByIPAddress(msg *dns.Msg, clientAddress string, qname string) {
 	var trimmedQname = strings.TrimSuffix(qname, ".")
 	for _, element := range msg.Answer {
 		Debug("\nKARMTAG: RR Element: %s\n", element)
-		//if (sort.SearchStrings(dummyTestIPAddresses, element.String()) !=  len(dummyTestIPAddresses)) {
-		//		return true
-		//	}
-		var respElemSegments = strings.Split(element.String(), "	")
-		var respElement = (respElemSegments[len(respElemSegments)-1:])[0]
-		// Length in bytes, not runes. Shorter doesn't make sense.
-		if (len(respElement) < 3) {
-			continue
-		} else {
-			if (sinkitBackendCall(respElement, clientAddress, trimmedQname)) {
-				return true
+		vals := strings.Split(element.String(), "	")
+		// We loop through the elements, TTL, IN, Class...
+		for i := range vals {
+			Debug("KARMTAG: value: %s\n", vals[i])
+			if (strings.EqualFold(vals[i], "A") || strings.EqualFold(vals[i], "CNAME") || strings.EqualFold(vals[i], "AAAA")) {
+				Debug("KARMTAG: value matches: %s\n", vals[i])
+				// Length in bytes, not runes. Shorter doesn't make sense.
+				// We ditch .root-servers.net.
+				if (len(vals) > i+1 && len(vals[i+1]) > 3 && !strings.HasSuffix(vals[i+1], ".root-servers.net.")) {
+					Debug("KARMTAG: to send to Core: %s\n", vals[i+1])
+					go sinkitBackendCall(strings.TrimSuffix(vals[i+1], "."), clientAddress, trimmedQname)
+				}
+				break
 			}
 		}
 	}
-	return false
 }
 
+// Move this to configuration
+var infDisabled, infDisabledErr = strconv.ParseBool(os.Getenv("SINKIT_RESOLVER_DISABLE_INFINISPAN"))
 func processCoreCom(msg *dns.Msg, qname string, clientAddress string) {
 	// Don't bother contacting Infinispan Sinkit Core
-	// Move this to configuration, this is evaluating each time...
-	infDisabled, err := strconv.ParseBool(os.Getenv("SINKIT_RESOLVER_DISABLE_INFINISPAN"))
-	if (err == nil && infDisabled) {
+	if (infDisabledErr == nil && infDisabled) {
 		Debug("SINKIT_RESOLVER_DISABLE_INFINISPAN TRUE\n")
 		return
 	} else {
@@ -219,7 +223,7 @@ func processCoreCom(msg *dns.Msg, qname string, clientAddress string) {
 		go dryAPICall(qname, clientAddress, qname)
 		Debug("...returning.")
 	} else {
-		go sinkByIPAddress(msg, clientAddress, qname)
+		sinkByIPAddress(msg, clientAddress, qname)
 		// We do not sinkhole based on IP address.
 		if (sinkByHostname(qname, clientAddress)) {
 			Debug("\n KARMTAG: %s GOES TO SINKHOLE!\n", msg.Answer)
