@@ -64,7 +64,9 @@ func dryAPICall(query string, clientAddress string, qname string) {
 		atomic.StoreInt64(&disabledSecondsTimestamp, int64(time.Now().Unix()))
 		return
 	}
-	if ((int64(time.Now().Unix()) - atomic.LoadInt64(&disabledSecondsTimestamp))*1000 > settings.Backend.SleepWhenDisabled) {
+	currentTime := int64(time.Now().Unix())
+	lastStamp := atomic.LoadInt64(&disabledSecondsTimestamp)
+	if ((currentTime - lastStamp)*1000 > settings.Backend.SleepWhenDisabled) {
 		Debug("Doing dry API call...")
 		start := time.Now()
 		//Doesn't hurt IP
@@ -83,7 +85,7 @@ func dryAPICall(query string, clientAddress string, qname string) {
 		Debug("Core is now ENABLED")
 		atomic.StoreUint32(&coreDisabled, 0)
 	} else {
-		Debug("Not enough time passed, waiting for another call...")
+		Debug("Not enough time passed, waiting for another call. Elapsed: %s ms, Limit: %s ms", (currentTime - lastStamp)*1000, settings.Backend.SleepWhenDisabled)
 	}
 	return
 }
