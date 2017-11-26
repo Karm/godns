@@ -59,6 +59,7 @@ type Settings struct {
 	CLIENT_ID_HEADER                string
 	BACKEND_RESOLVERS               []string
 	BACKEND_RESOLVERS_EXCLUSIVELY   bool
+	BACKEND_RESOLVERS_TCP_ONLY      bool
 	ORACULUM_API_FIT_TIMEOUT        int64
 	ORACULUM_SLEEP_WHEN_DISABLED    int64
 	ORACULUM_API_TIMEOUT            int64

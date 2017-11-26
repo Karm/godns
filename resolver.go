@@ -33,6 +33,11 @@ var nameservers []string
 // in every second, and return as early as possible (have an answer).
 // It returns an error if no request has succeeded.
 func (r *Resolver) Lookup(net string, req *dns.Msg, remoteAddress net.Addr, oraculumCache Cache, caches *ListCache) (message *dns.Msg, err error) {
+
+	if(settings.BACKEND_RESOLVERS_TCP_ONLY) {
+		net = "tcp"
+	}
+
 	c := &dns.Client{
 		Net:          net,
 		ReadTimeout:  r.Timeout(),
