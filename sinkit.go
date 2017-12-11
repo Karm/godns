@@ -246,14 +246,14 @@ func processCoreCom(msg *dns.Msg, qname string, clientAddress string, oraculumCa
 		return
 	}
 
-	qnameMD5 := qnameToMD5(trimmedQname)
+	qnamesMD5 := genSubdomainsMD5(trimmedQname)
 	var (
-		err error
+		err    error
 		action tAction
 	)
 	if settings.LOCAL_RESOLVER {
 		// check customlist - log/block/white
-		action, err = caches.Customlist.Get(qnameMD5)
+		action, err = caches.Customlist.FindFirstKey(qnamesMD5)
 		if err == nil {
 			if action == ActionWhite {
 				logger.Debug("\n KARMTAG: Record %s is allowed in customlist", qname)
@@ -273,7 +273,7 @@ func processCoreCom(msg *dns.Msg, qname string, clientAddress string, oraculumCa
 		}
 
 		// check ioclist, only log/block
-		action, err = caches.Ioclist.Get(qnameMD5)
+		action, err = caches.Ioclist.FindFirstKey(qnamesMD5)
 		if err == nil {
 			if action == ActionLog {
 				logger.Debug("\n KARMTAG: Record %s is audited by ioclist", qname)
@@ -287,27 +287,27 @@ func processCoreCom(msg *dns.Msg, qname string, clientAddress string, oraculumCa
 		}
 		// for LR end here
 		return
-	} else {
-		// check list with IoCs and Custom lists, only records found here are checked
-		action, err = caches.AllIoCwithCustomLists.Get(qnameMD5)
-		if err == nil {
-			if action == ActionCheck {
-				coreDisabledNow := atomic.LoadUint32(&coreDisabled) == 1
-				if coreDisabledNow {
-					logger.Debug("Core is DISABLED. Gonna call dryAPICall.")
-					go dryAPICall(trimmedQname, clientAddress, trimmedQname)
-				}
-				if settings.ORACULUM_IP_ADDRESSES_ENABLED {
-					sinkByIPAddress(msg, clientAddress, trimmedQname, oraculumCache, coreDisabledNow)
-					// We do not sinkhole based on IP address here.
-				}
-				if sinkByHostname(trimmedQname, clientAddress, oraculumCache, coreDisabledNow) {
-					logger.Debug("Record %s is blocked by core API call.\n", msg.Answer)
-					auditor.Blocked(clientAddress, trimmedQname)
-					sendToSinkhole(msg, qname)
-				}
-			} // no other Action expected to trigger Core API call at this time...
-		}
+	}
+
+	// check list with IoCs and Custom lists, only records found here are checked
+	action, err = caches.AllIoCwithCustomLists.FindFirstKey(qnamesMD5)
+	if err == nil {
+		if action == ActionCheck {
+			coreDisabledNow := atomic.LoadUint32(&coreDisabled) == 1
+			if coreDisabledNow {
+				logger.Debug("Core is DISABLED. Gonna call dryAPICall.")
+				go dryAPICall(trimmedQname, clientAddress, trimmedQname)
+			}
+			if settings.ORACULUM_IP_ADDRESSES_ENABLED {
+				sinkByIPAddress(msg, clientAddress, trimmedQname, oraculumCache, coreDisabledNow)
+				// We do not sinkhole based on IP address here.
+			}
+			if sinkByHostname(trimmedQname, clientAddress, oraculumCache, coreDisabledNow) {
+				logger.Debug("Record %s is blocked by core API call.\n", msg.Answer)
+				auditor.Blocked(clientAddress, trimmedQname)
+				sendToSinkhole(msg, qname)
+			}
+		} // no other Action expected to trigger Core API call at this time...
 	}
 }
 
@@ -389,4 +389,14 @@ func isAnswerValid(answer string) bool {
 	}
 
 	return true
+}
+
+// genSubdomainsMD5 generates array of md5 hashes for all subdomains, longest first, stops at 2nd level domain: a.b.c.d -> ["a.b.c.d", "b.c.d", "c.d"]
+func genSubdomainsMD5(trimmedQname string) []string {
+	parts := strings.Split(trimmedQname, ".")
+	res := make([]string, len(parts)-1)
+	for i := range res[:len(parts)-1] {
+		res[i] = qnameToMD5(strings.Join(parts[i:], "."))
+	}
+	return res
 }

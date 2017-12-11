@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"sync"
 )
 
@@ -29,6 +30,7 @@ type SinklistCache interface {
 	Remove(key string)
 	Length() int
 	Replace(cache map[string]tAction)
+	FindFirstKey(keys []string) (action tAction, err error)
 }
 
 // SinklistMemoryCache is SinklistCache with memory backend
@@ -102,4 +104,21 @@ func (c *SinklistMemoryCache) Length() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.Backend)
+}
+
+// FindFirstKey finds first existing key from array of strings, error if none exist
+func (c *SinklistMemoryCache) FindFirstKey(keys []string) (action tAction, err error) {
+	logger.Debug("SinklistCache Get: called for keys: %s", strings.Join(keys, ","))
+	c.mu.RLock()
+	for _, key := range keys {
+		data, ok := c.Backend[key]
+		if ok {
+			logger.Debug("SinklistCache Get: key: %s found value: %t", key, data)
+			c.mu.RUnlock()
+			return data, nil
+		}
+	}
+	c.mu.RUnlock()
+	logger.Debug("SinklistCache Get: keys: %s were not found.", keys)
+	return ActionBlack, KeyNotFound{strings.Join(keys, ",")}
 }
