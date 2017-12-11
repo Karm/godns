@@ -5,6 +5,7 @@
 
 export NUM_OF_MY_CPUS="`nproc`"
 export UNBOUND_CONFIG_FILE="/etc/unbound/unbound.conf"
+export UNBOUND_FORWARD_CONFIG_FILE="/etc/unbound/conf.d/forward.conf"
 
 # Credit: John1024, SO
 pw2() { echo "x=l($1)/l(2); scale=0; 2^((x+0.5)/1)" | bc -l; }
@@ -81,6 +82,24 @@ sed -i "s~@UNBOUND_DO_IP4@~${UNBOUND_DO_IP4:-yes}~g" ${UNBOUND_CONFIG_FILE}
 sed -i "s~@UNBOUND_DO_UDP@~${UNBOUND_DO_UDP:-yes}~g" ${UNBOUND_CONFIG_FILE}
 sed -i "s~@UNBOUND_DO_TCP@~${UNBOUND_DO_TCP:-yes}~g" ${UNBOUND_CONFIG_FILE}
 sed -i "s~@UNBOUND_MODULE_CONFIG@~${UNBOUND_MODULE_CONFIG:-iterator}~g" ${UNBOUND_CONFIG_FILE}
+
+#setup forwarding from unbound
+touch $UNBOUND_FORWARD_CONFIG_FILE && rm $UNBOUND_FORWARD_CONFIG_FILE
+if [ -z {$UNBOUND_BACKEND_RESOLVERS+x} ]; then
+   echo "UNBOUND_BACKEND_RESOLVERS is unset, unbound will do the recursive resolution"
+   else
+   echo "UNBOUND_BACKEND_RESOLVERS is set to $UNBOUND_BACKEND_RESOLVERS, unbound will forward queries"
+   echo "forward-zone:" > $UNBOUND_FORWARD_CONFIG_FILE
+   echo "    name: \".\"" >> $UNBOUND_FORWARD_CONFIG_FILE
+   for i in $(echo $UNBOUND_BACKEND_RESOLVERS | tr "," "\n")
+   do
+     addr=`echo $i | tr ":" "@"`
+     echo "    forward-addr: $addr" >> $UNBOUND_FORWARD_CONFIG_FILE
+   done
+fi
+
+#unbound trust anchor intialization
+unbound-anchor
 
 # Start
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf -n
