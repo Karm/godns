@@ -85,7 +85,7 @@ sed -i "s~@UNBOUND_MODULE_CONFIG@~${UNBOUND_MODULE_CONFIG:-iterator}~g" ${UNBOUN
 
 #setup forwarding from unbound
 touch $UNBOUND_FORWARD_CONFIG_FILE && rm $UNBOUND_FORWARD_CONFIG_FILE
-if [ -z {$UNBOUND_BACKEND_RESOLVERS+x} ]; then
+if [[ -z "${UNBOUND_BACKEND_RESOLVERS}" ]]; then
    echo "UNBOUND_BACKEND_RESOLVERS is unset, unbound will do the recursive resolution"
    else
    echo "UNBOUND_BACKEND_RESOLVERS is set to $UNBOUND_BACKEND_RESOLVERS, unbound will forward queries"
