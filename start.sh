@@ -11,8 +11,7 @@ export UNBOUND_FORWARD_CONFIG_FILE="/etc/unbound/conf.d/forward.conf"
 pw2() { echo "x=l($1)/l(2); scale=0; 2^((x+0.5)/1)" | bc -l; }
 
 if [[ "${NUM_OF_MY_CPUS}" -lt 2 ]]; then
-    echo "Too few CPUs. Use at least 2 cores, recommended 8."
-    exit 1
+    echo "Too few CPUs. Use at least 2 cores, recommended 4 and more."
 fi
 
 if [[ "${NUM_OF_MY_CPUS}" -le 4 ]]; then
